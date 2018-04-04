@@ -1,5 +1,5 @@
 import tensorflow as tf
-from g2g.utils import *
+from .utils import *
 
 
 class Graph2Gauss:
