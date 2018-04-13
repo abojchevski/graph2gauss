@@ -10,7 +10,6 @@ python setup.py install
 
 ## Requirements
 * tensorflow (>=1.4)
-* networkx
 * sklearn (only for evaluation)
 
 ## Demo
