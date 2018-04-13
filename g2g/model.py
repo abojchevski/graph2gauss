@@ -58,12 +58,17 @@ class Graph2Gauss:
             n_hidden = [512]
         self.n_hidden = n_hidden
 
-        train_ones, val_ones, val_zeros, test_ones, test_zeros = train_val_test_split_adjacency(
-            A=A, p_val=p_val, p_test=p_test, seed=seed, neg_mul=1, every_node=True, connected=False,
-            undirected=(A != A.T).nnz == 0)
-
+        # hold out some validation and/or test edges
         # pre-compute the hops for each node for more efficient sampling
-        hops = get_hops(edges_to_sparse(train_ones, self.N), K)
+        if p_val + p_test > 0:
+            train_ones, val_ones, val_zeros, test_ones, test_zeros = train_val_test_split_adjacency(
+                A=A, p_val=p_val, p_test=p_test, seed=seed, neg_mul=1, every_node=True, connected=False,
+                undirected=(A != A.T).nnz == 0)
+            A_train = edges_to_sparse(train_ones, self.N)
+            hops = get_hops(A_train, K)
+        else:
+            hops = get_hops(A, K)
+
         scale_terms = {h if h != -1 else max(hops.keys()) + 1:
                            hops[h].sum(1).A1 if h != -1 else hops[1].shape[0] - hops[h].sum(1).A1
                        for h in hops}
@@ -72,15 +77,20 @@ class Graph2Gauss:
         self.__dataset_generator(hops, scale_terms)
         self.__build_loss()
 
-        # setup the validation set edges for easy evaluation
-        val_edges = np.row_stack((val_ones, val_zeros))
-        self.neg_val_energy = -self.energy_kl(val_edges)
-        self.val_ground_truth = A[val_edges[:, 0], val_edges[:, 1]].A1
+        # setup the validation set for easy evaluation
+        if p_val > 0:
+            val_edges = np.row_stack((val_ones, val_zeros))
+            self.neg_val_energy = -self.energy_kl(val_edges)
+            self.val_ground_truth = A[val_edges[:, 0], val_edges[:, 1]].A1
+            self.early_stopping = True
+        else:
+            self.early_stopping = False
 
-        # setup the test set edges for easy evaluation
-        test_edges = np.row_stack((test_ones, test_zeros))
-        self.neg_test_energy = -self.energy_kl(test_edges)
-        self.test_ground_truth = A[test_edges[:, 0], test_edges[:, 1]].A1
+        # setup the test set for easy evaluation
+        if p_test > 0:
+            test_edges = np.row_stack((test_ones, test_zeros))
+            self.neg_test_energy = -self.energy_kl(test_edges)
+            self.test_ground_truth = A[test_edges[:, 0], test_edges[:, 1]].A1
 
     def __build(self):
         w_init = tf.contrib.layers.xavier_initializer
@@ -209,23 +219,28 @@ class Graph2Gauss:
         sess.run(tf.global_variables_initializer())
 
         for epoch in range(self.max_iter):
-            loss, mu, sigma, _ = sess.run([self.loss, self.mu, self.sigma, train_op])
+            loss, _ = sess.run([self.loss, train_op])
 
-            val_auc, val_ap = score_link_prediction(self.val_ground_truth, sess.run(self.neg_val_energy))
+            if self.early_stopping:
+                val_auc, val_ap = score_link_prediction(self.val_ground_truth, sess.run(self.neg_val_energy))
 
-            if self.verbose:
-                print('epoch: {:3d}, loss: {:.4f}, val_auc: {:.4f}, val_ap: {:.4f}'.format(epoch, loss, val_auc, val_ap))
+                if self.verbose:
+                    print('epoch: {:3d}, loss: {:.4f}, val_auc: {:.4f}, val_ap: {:.4f}'.format(epoch, loss, val_auc, val_ap))
 
-            if val_auc + val_ap > val_max:
-                val_max = val_auc + val_ap
-                tolerance = self.tolerance
-                self.__save_vars(sess)
+                if val_auc + val_ap > val_max:
+                    val_max = val_auc + val_ap
+                    tolerance = self.tolerance
+                    self.__save_vars(sess)
+                else:
+                    tolerance -= 1
+
+                if tolerance == 0:
+                    break
             else:
-                tolerance -= 1
+                if self.verbose:
+                    print('epoch: {:3d}, loss: {:.4f}'.format(epoch, loss))
 
-            if tolerance == 0:
-                break
-
-        self.__restore_vars(sess)
+        if self.early_stopping:
+            self.__restore_vars(sess)
 
         return sess
