@@ -205,10 +205,16 @@ class Graph2Gauss:
         """
         Trains the model.
 
+        Parameters
+        ----------
+        gpu_list : string
+            A list of available GPU devices.
+
         Returns
         -------
-            sess : tf.Session
+        sess : tf.Session
             Tensorflow session that can be used to obtain the trained embeddings
+
         """
         val_max = -1.0
         tolerance = self.tolerance
