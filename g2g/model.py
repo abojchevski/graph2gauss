@@ -201,7 +201,7 @@ class Graph2Gauss:
         for name in self.saved_vars:
                 sess.run(tf.assign(self.saved_vars[name][0], self.saved_vars[name][1]))
 
-    def train(self):
+    def train(self, gpu_list='0'):
         """
         Trains the model.
 
@@ -215,7 +215,8 @@ class Graph2Gauss:
 
         train_op = tf.train.AdamOptimizer(learning_rate=1e-3).minimize(self.loss)
 
-        sess = tf.Session(config=tf.ConfigProto(gpu_options=tf.GPUOptions(visible_device_list='0')))
+        sess = tf.Session(config=tf.ConfigProto(gpu_options=tf.GPUOptions(visible_device_list=gpu_list,
+                                                                          allow_growth=True)))
         sess.run(tf.global_variables_initializer())
 
         for epoch in range(self.max_iter):
