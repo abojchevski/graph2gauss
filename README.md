@@ -1,5 +1,8 @@
 # Graph2Gauss 
 
+![Illustraion of Graph2Gauss](https://www.kdd.in.tum.de/fileadmin/_processed_/csm_g2g_048fb1eadf.png)
+
+
 Tensorflow implementation of the method proposed in the paper:
 "[Deep Gaussian Embedding of Graphs: Unsupervised Inductive Learning via Ranking](https://openreview.net/forum?id=r1ZdKJ-0W)", Aleksandar Bojchevski and Stephan Günnemann, ICLR 2018.
 
