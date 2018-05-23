@@ -576,3 +576,52 @@ def edge_cover(A):
     assert len(np.unique(edges)) == N
 
     return edges
+
+
+def batch_pairs_sample(A, nodes_hide):
+    """
+    For a given set of nodes return all edges and an equal number of randomly sampled non-edges.
+
+    Parameters
+    ----------
+    A : sp.spmatrix
+        Sparse adjacency matrix
+
+    Returns
+    -------
+    pairs : array-like, shape [?, 2]
+        The sampled pairs.
+
+    """
+    A = A.copy()
+    undiricted = (A != A.T).nnz == 0
+
+    if undiricted:
+        A = sp.triu(A, 1).tocsr()
+
+    edges = np.column_stack(A.nonzero())
+    edges = edges[np.in1d(edges[:, 0], nodes_hide) | np.in1d(edges[:, 1], nodes_hide)]
+
+    # include the missing direction
+    if undiricted:
+        edges = np.row_stack((edges, np.column_stack((edges[:, 1], edges[:, 0]))))
+
+    # sample the non-edges for each node separately
+    arng = np.arange(A.shape[0])
+    not_edges = []
+    for nh in nodes_hide:
+        nn = np.concatenate((A[nh].nonzero()[1], A[:, nh].nonzero()[0]))
+        not_nn = np.setdiff1d(arng, nn)
+
+        not_nn = np.random.permutation(not_nn)[:len(nn)]
+        not_edges.append(np.column_stack((np.repeat(nh, len(nn)), not_nn)))
+
+    not_edges = np.row_stack(not_edges)
+
+    # include the missing direction
+    if undiricted:
+        not_edges = np.row_stack((not_edges, np.column_stack((not_edges[:, 1], not_edges[:, 0]))))
+
+    pairs = np.row_stack((edges, not_edges))
+
+    return pairs

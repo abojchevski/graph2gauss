@@ -1,3 +1,4 @@
+import numpy as np
 import tensorflow as tf
 from .utils import *
 
@@ -13,7 +14,7 @@ class Graph2Gauss:
     Aleksandar Bojchevski
     Technical University of Munich
     """
-    def __init__(self, A, X, L, K=1, p_val=0.10, p_test=0.05, n_hidden=None,
+    def __init__(self, A, X, L, K=1, p_val=0.10, p_test=0.05, p_nodes=0.0, n_hidden=None,
                  max_iter=2000, tolerance=100, scale=False, seed=0, verbose=True):
         """
         Parameters
@@ -30,6 +31,8 @@ class Graph2Gauss:
             Percent of edges in the validation set, 0 <= p_val < 1
         p_test : float
             Percent of edges in the test set, 0 <= p_test < 1
+        p_nodes : float
+            Percent of nodes to hide (inductive learning), 0 <= p_nodes < 1
         n_hidden : list(int)
             A list specifying the size of each hidden layer, default n_hidden=[512]
         max_iter :  int
@@ -45,8 +48,17 @@ class Graph2Gauss:
         """
         tf.reset_default_graph()
         tf.set_random_seed(seed)
+        np.random.seed(seed)
 
-        self.X = tf.SparseTensor(*sparse_feeder(X.astype(np.float32)))
+        X = X.astype(np.float32)
+
+        # completely hide some nodes from the network for inductive evaluation
+        if p_nodes > 0:
+            A = self.__setup_inductive(A, X, p_nodes)
+        else:
+            self.X = tf.SparseTensor(*sparse_feeder(X))
+            self.feed_dict = None
+
         self.N, self.D = X.shape
         self.L = L
         self.max_iter = max_iter
@@ -92,6 +104,10 @@ class Graph2Gauss:
             self.neg_test_energy = -self.energy_kl(test_edges)
             self.test_ground_truth = A[test_edges[:, 0], test_edges[:, 1]].A1
 
+        # setup the inductive test set for easy evaluation
+        if p_nodes > 0:
+            self.neg_ind_energy = -self.energy_kl(self.ind_pairs)
+
     def __build(self):
         w_init = tf.contrib.layers.xavier_initializer
 
@@ -130,6 +146,33 @@ class Graph2Gauss:
         else:
             self.loss = tf.reduce_mean(energy)
 
+    def __setup_inductive(self, A, X, p_nodes):
+        N = A.shape[0]
+        nodes_rnd = np.random.permutation(N)
+        n_hide = int(N * p_nodes)
+        nodes_hide = nodes_rnd[:n_hide]
+
+        A_hidden = A.copy().tolil()
+        A_hidden[nodes_hide] = 0
+        A_hidden[:, nodes_hide] = 0
+
+        # additionally add any dangling nodes to the hidden ones since we can't learn from them
+        nodes_dangling = np.where(A_hidden.sum(0).A1 + A_hidden.sum(1).A1 == 0)[0]
+        if len(nodes_dangling) > 0:
+            nodes_hide = np.concatenate((nodes_hide, nodes_dangling))
+        nodes_keep = np.setdiff1d(np.arange(N), nodes_hide)
+
+        self.X = tf.sparse_placeholder(tf.float32)
+        self.feed_dict = {self.X: sparse_feeder(X[nodes_keep])}
+
+        self.ind_pairs = batch_pairs_sample(A, nodes_hide)
+        self.ind_ground_truth = A[self.ind_pairs[:, 0], self.ind_pairs[:, 1]].A1
+        self.ind_feed_dict = {self.X: sparse_feeder(X)}
+
+        A = A[nodes_keep][:, nodes_keep]
+
+        return A
+
     def energy_kl(self, pairs):
         """
         Computes the energy of a set of node pairs as the KL divergence between their respective Gaussian embeddings.
@@ -144,8 +187,8 @@ class Graph2Gauss:
         energy : array-like, shape [?]
             The energy of each pair given the currently learned model
         """
-        ij_mu = tf.nn.embedding_lookup(self.mu, pairs)
-        ij_sigma = tf.nn.embedding_lookup(self.sigma, pairs)
+        ij_mu = tf.gather(self.mu, pairs)
+        ij_sigma = tf.gather(self.sigma, pairs)
 
         sigma_ratio = ij_sigma[:, 1] / ij_sigma[:, 0]
         trace_fac = tf.reduce_sum(sigma_ratio, 1)
@@ -226,12 +269,12 @@ class Graph2Gauss:
         sess.run(tf.global_variables_initializer())
 
         for epoch in range(self.max_iter):
-            loss, _ = sess.run([self.loss, train_op])
+            loss, _ = sess.run([self.loss, train_op], self.feed_dict)
 
             if self.early_stopping:
-                val_auc, val_ap = score_link_prediction(self.val_ground_truth, sess.run(self.neg_val_energy))
+                val_auc, val_ap = score_link_prediction(self.val_ground_truth, sess.run(self.neg_val_energy, self.feed_dict))
 
-                if self.verbose:
+                if self.verbose and epoch % 50 == 0:
                     print('epoch: {:3d}, loss: {:.4f}, val_auc: {:.4f}, val_ap: {:.4f}'.format(epoch, loss, val_auc, val_ap))
 
                 if val_auc + val_ap > val_max:
@@ -244,7 +287,7 @@ class Graph2Gauss:
                 if tolerance == 0:
                     break
             else:
-                if self.verbose:
+                if self.verbose and epoch % 50 == 0:
                     print('epoch: {:3d}, loss: {:.4f}'.format(epoch, loss))
 
         if self.early_stopping:
