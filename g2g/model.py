@@ -94,9 +94,9 @@ class Graph2Gauss:
             val_edges = np.row_stack((val_ones, val_zeros))
             self.neg_val_energy = -self.energy_kl(val_edges)
             self.val_ground_truth = A[val_edges[:, 0], val_edges[:, 1]].A1
-            self.early_stopping = True
+            self.val_early_stopping = True
         else:
-            self.early_stopping = False
+            self.val_early_stopping = False
 
         # setup the test set for easy evaluation
         if p_test > 0:
@@ -259,7 +259,7 @@ class Graph2Gauss:
             Tensorflow session that can be used to obtain the trained embeddings
 
         """
-        val_max = -1.0
+        early_stopping_score_max = -1.0
         tolerance = self.tolerance
 
         train_op = tf.train.AdamOptimizer(learning_rate=1e-3).minimize(self.loss)
@@ -271,26 +271,28 @@ class Graph2Gauss:
         for epoch in range(self.max_iter):
             loss, _ = sess.run([self.loss, train_op], self.feed_dict)
 
-            if self.early_stopping:
+            if self.val_early_stopping:
                 val_auc, val_ap = score_link_prediction(self.val_ground_truth, sess.run(self.neg_val_energy, self.feed_dict))
+                early_stopping_score = val_auc + val_ap
 
                 if self.verbose and epoch % 50 == 0:
                     print('epoch: {:3d}, loss: {:.4f}, val_auc: {:.4f}, val_ap: {:.4f}'.format(epoch, loss, val_auc, val_ap))
 
-                if val_auc + val_ap > val_max:
-                    val_max = val_auc + val_ap
-                    tolerance = self.tolerance
-                    self.__save_vars(sess)
-                else:
-                    tolerance -= 1
-
-                if tolerance == 0:
-                    break
             else:
+                early_stopping_score = -loss
                 if self.verbose and epoch % 50 == 0:
                     print('epoch: {:3d}, loss: {:.4f}'.format(epoch, loss))
 
-        if self.early_stopping:
-            self.__restore_vars(sess)
+            if early_stopping_score > early_stopping_score_max:
+                early_stopping_score_max = early_stopping_score
+                tolerance = self.tolerance
+                self.__save_vars(sess)
+            else:
+                tolerance -= 1
+
+            if tolerance == 0:
+                break
+
+        self.__restore_vars(sess)
 
         return sess
