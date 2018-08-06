@@ -292,7 +292,10 @@ class Graph2Gauss:
 
             if tolerance == 0:
                 break
-
+        
+        if tolerance > 0:
+            print('WARNING: Training might not have converged. Try increasing max_iter') 
+                  
         self.__restore_vars(sess)
 
         return sess
