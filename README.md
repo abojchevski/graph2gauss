@@ -18,6 +18,9 @@ python setup.py install
 ## Demo
 See the notebook example.ipynb for a simple demo.
 
+## Graphs without attributes
+If you graph has no attribute information you can run the one-hot version of Graph2Gauss (G2G_oh) by setting X=I, where I is the identity matrix. Additionally, setting X=A+I, where A is the adjacency matrix often yields even better perfomance.
+
 ## Cite
 Please cite our paper if you use this code in your own work:
 
