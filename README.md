@@ -1,6 +1,6 @@
 # Graph2Gauss 
 
-![Illustraion of Graph2Gauss](https://www.kdd.in.tum.de/fileadmin/_processed_/csm_g2g_f6c3f13530.png)
+<img src="https://www.kdd.in.tum.de/fileadmin/_processed_/csm_g2g_f6c3f13530.png" width="600">
 
 
 Tensorflow implementation of the method proposed in the paper:
