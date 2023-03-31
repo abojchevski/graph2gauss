@@ -394,7 +394,7 @@ def sample_last_hop(A, nodes):
     while len(nnz) != 0:
         new_sample = np.random.randint(0, N, len(nnz))
         sampled[nnz] = new_sample
-        nnz = A[nnz, new_sample].nonzero()[1]
+        nnz = A[nodes, sampled].nonzero()[1]
 
     return sampled
 
@@ -478,7 +478,7 @@ def load_dataset(file_name):
     """
     if not file_name.endswith('.npz'):
         file_name += '.npz'
-    with np.load(file_name) as loader:
+    with np.load(file_name, allow_pickle = True) as loader:
         loader = dict(loader)
         A = sp.csr_matrix((loader['adj_data'], loader['adj_indices'],
                            loader['adj_indptr']), shape=loader['adj_shape'])
